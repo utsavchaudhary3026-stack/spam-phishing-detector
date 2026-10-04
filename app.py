@@ -13,14 +13,13 @@ st.set_page_config(
 
 st.title("🛡️ SMS / Email Spam & Phishing Detector")
 st.markdown("""
-This Deep Learning NLP application uses a **Neural Network (Sequential Dense architecture)** 
-with text vectorization to detect spam, lottery scams, and phishing attempts in real time.
+This Deep Learning NLP application uses a **Neural Network (Sequential Multi-Hot Bag-of-Words)** 
+to detect spam, lottery scams, and phishing attempts in real time.
 """)
 
 # 2. Build and Train NLP Neural Network (Cached in memory)
 @st.cache_resource
 def build_and_train_nlp_model():
-    # Representative SMS/Phishing dataset
     corpus = [
         "Congratulations! You won a $1,000 Walmart gift card. Click here to claim your prize now.",
         "URGENT: Your bank account is locked due to suspicious activity. Verify credentials at link.",
@@ -40,23 +39,22 @@ def build_and_train_nlp_model():
         "Are you attending the seminar on deep learning this Friday afternoon?"
     ]
     # 1 = Spam / Phishing, 0 = Legitimate (Ham)
-    labels = np.array([1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0])
+    labels = np.array([1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0], dtype=np.float32)
 
-    # Text Vectorization layer (Vocabulary size = 500 words, Sequence length = 30)
-    vectorizer = TextVectorization(max_tokens=500, output_sequence_length=30)
+    # Multi-hot text vectorization (produces a 2D bag-of-words matrix compatible with Dense layers)
+    vectorizer = TextVectorization(max_tokens=300, output_mode="multi_hot")
     vectorizer.adapt(corpus)
 
-    # Neural Network Architecture
     model = Sequential([
         vectorizer,
-        Dense(32, activation='relu'),
-        Dropout(0.2),
         Dense(16, activation='relu'),
+        Dropout(0.2),
+        Dense(8, activation='relu'),
         Dense(1, activation='sigmoid')
     ])
 
     model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
-    model.fit(np.array(corpus), labels, epochs=80, verbose=0)
+    model.fit(np.array(corpus), labels, epochs=60, verbose=0)
     return model
 
 with st.spinner("Training Deep Learning NLP Model..."):
@@ -64,20 +62,21 @@ with st.spinner("Training Deep Learning NLP Model..."):
 
 # 3. Input Text Box
 st.subheader("Message Scanner")
-default_text = "Congratulations! You have been selected to win a cash prize. Click the link to claim."
-user_input = st.text_area("Paste an email snippet or SMS text below:", value=default_text, height=130)
 
-# Quick sample buttons
+# Initialize session state for pre-filled templates if not already present
+if "user_text" not in st.session_state:
+    st.session_state["user_text"] = "Congratulations! You have been selected to win a cash prize. Click the link to claim."
+
+# Template Buttons
 col1, col2 = st.columns(2)
 with col1:
     if st.button("Load Legitimate Sample"):
-        st.session_state["sample"] = "Hey, are you free this evening to work on our presentation?"
+        st.session_state["user_text"] = "Hey, are you free this evening to work on our presentation?"
 with col2:
     if st.button("Load Phishing Scam Sample"):
-        st.session_state["sample"] = "URGENT: Your bank account is locked. Click here to verify credentials now."
+        st.session_state["user_text"] = "URGENT: Your bank account is locked. Click here to verify credentials now."
 
-if "sample" in st.session_state:
-    user_input = st.session_state["sample"]
+user_input = st.text_area("Paste an email snippet or SMS text below:", value=st.session_state["user_text"], height=120)
 
 # 4. Classification & Output
 if st.button("Analyze Text with Deep Learning", type="primary"):
@@ -85,15 +84,15 @@ if st.button("Analyze Text with Deep Learning", type="primary"):
         st.warning("Please enter some text to analyze.")
     else:
         with st.spinner("Running forward pass through neural network..."):
-            prob = nlp_model.predict(np.array([user_input]))[0][0]
+            prob = float(nlp_model.predict(np.array([user_input]))[0][0])
             confidence = prob * 100
 
         st.subheader("Analysis Verdict")
         if prob >= 0.50:
             st.error(f"🚨 **SPAM / PHISHING DETECTED** (Risk Score: `{confidence:.1f}%`)")
-            st.progress(float(prob))
-            st.write("⚠️ **Warning:** This message shows structural patterns common in credential harvesting, unsolicited marketing, or lottery scams.")
+            st.progress(prob)
+            st.write("⚠️ **Warning:** This message contains semantic patterns matching credential harvesting, lottery scams, or unauthorized links.")
         else:
             st.success(f"✅ **LEGITIMATE (HAM)** (Spam Probability: `{confidence:.1f}%`)")
-            st.progress(float(prob))
-            st.write("✔️️ **Safe:** This message matches everyday interpersonal or official conversational patterns.")
+            st.progress(prob)
+            st.write("✔ **Safe:** This message matches everyday interpersonal or official conversational patterns.")
